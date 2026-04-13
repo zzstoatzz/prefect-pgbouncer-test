@@ -1,0 +1,46 @@
+name: E2E PgBouncer test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Postgres + PgBouncer
+        run: docker compose up -d --wait
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install prefect from PR branch
+        run: uv pip install --system "prefect[server] @ git+https://github.com/PrefectHQ/prefect.git@support-pgbouncer-nullpool"
+
+      - name: Start Prefect server (PgBouncer, NullPool)
+        env:
+          PREFECT_SERVER_DATABASE_CONNECTION_URL: "postgresql+asyncpg://prefect:prefect@localhost:6432/prefect"
+          PREFECT_SERVER_DATABASE_SQLALCHEMY_POOL_SIZE: "null"
+          PREFECT_SERVER_DATABASE_SQLALCHEMY_CONNECT_ARGS_STATEMENT_CACHE_SIZE: "0"
+        run: |
+          prefect server start --host 0.0.0.0 &
+          sleep 5
+
+      - name: Run E2E test
+        env:
+          PREFECT_API_URL: "http://localhost:4200/api"
+        run: uv run test_flow.py
+
+      - name: Show PgBouncer stats
+        if: always()
+        run: |
+          docker compose exec -T pgbouncer psql -p 6432 -U prefect pgbouncer -c "SHOW POOLS;" || true
+          docker compose exec -T pgbouncer psql -p 6432 -U prefect pgbouncer -c "SHOW STATS;" || true
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
