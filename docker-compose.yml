@@ -23,6 +23,7 @@ services:
       MAX_CLIENT_CONN: "200"
       DEFAULT_POOL_SIZE: "10"
       LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
     ports:
       - "6432:6432"
     depends_on:
